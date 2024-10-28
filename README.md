@@ -4,7 +4,7 @@ ESPhome irrigation controler for 9v impulse valve
 There are situations where standard irrigation valves (like zigbee Giex valves) have insuficient water flow to operate some sprinklers.
 For these cases, you can use large valves (1") but there are 2 types of valves in the market:
   - 24v AC controled valves. Open when 24v/AC is aplied to coil
-  - 9v pulse controled valves. Open by aplying a short pulse of 9v to the valve and closes by aplying reversed polirity pulse
+  - 9v pulse controled valves. Open by aplying a short pulse of 9v to the valve and closes by aplying reversed polarity pulse
 For a battery operated controler for this valve, the pulse valve is the right cloice.
 
 This controler uses:
