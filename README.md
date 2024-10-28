@@ -8,7 +8,7 @@ For these cases, you can use large valves (1") but there are 2 types of valves i
 For a battery operated controller for this valve, the pulse valve is the right choice.
 
 This controller uses:
-  - ESP32_devkit_V4 as processor (ESP32U with connector for external antenan)
+  - ESP32_devkit_V4 as processor (ESP32U with connector for external antenna)
       https://www.aliexpress.com/item/4000471022528.html
   - WI-FI external antenna with cable:
       https://www.aliexpress.com/item/1005003062675298.html
