@@ -1,0 +1,372 @@
+################################################################################
+# Hardware: Controlador de riego para ESP32 y valvula de impulsos
+################################################################################
+# - Caudalimetro:
+#     Sensor de caudal YF-B5. 3/4" macho-macho. 396 pulsos/litro
+#     https://www.aliexpress.com/item/1005005588692911.html
+#
+# - H bridge Driver:
+#     DRV8833 dual H mosfet bridge
+#     https://www.aliexpress.com/item/1005006282457232.html
+#
+# - 18650 UPS:
+#     https://www.aliexpress.com/item/1005005788389538.html
+#
+# - Solar Panel:
+#     https://www.aliexpress.com/item/1005005758954904.html
+#
+# - A/D converter
+#     https://www.aliexpress.com/item/1005005343202454.html
+#
+# - Adjustable steep Up DC/DC converter
+#     https://www.aliexpress.com/item/1005006365958087.html
+#
+# - ESP32-WROOM-32U (con conector para antena externa)
+#     https://www.aliexpress.com/item/4000471022528.html
+# 
+# - Valvula de pulsos 9v 1" hembra-hembra
+#     https://www.leroymerlin.es/productos/jardin-y-terraza/riego/electrovalvulas/electrovalvula-para-riego-9v-rosca-hembra-1-jardibric-19453462.html
+#
+################################################################################
+#
+################################################################################
+# Substitution Variables
+################################################################################
+substitutions:
+  devicename: riegof
+  upper_devicename: riegof
+  valveIN1: GPIO12
+  valveIN2: GPIO14
+  valveENA: GPIO16
+  valveMAN: GPIO27   #Pulsador de riego manual/ wakeup
+  sda: GPIO21
+  scl: GPIO22
+  flux: GPIO19        #Caudalimetro
+  wake_time: 20s      #Tiempo de actividad
+  sleep_time: 15min   #Tiempo dormido
+  water_time: 6min    #Tiempo de ciclo de riego manual
+  net_ip: 192.168.2.226 #0.150 para casa, 2.226 para chalet
+  net_gateway: 192.168.2.1  #0.2 para casa, 2.1 para chalet
+  board: esp32dev
+  framework: arduino
+
+################################################################################
+# Board Configuration
+################################################################################
+esphome:
+  name: $devicename
+  on_boot:
+    priority: -200
+    then:
+      - switch.turn_off: "${upper_devicename}OP"
+      - switch.turn_off: "${upper_devicename}SLEEP"
+      - switch.turn_off: "${upper_devicename}CL"  
+      - delay: 16s
+      - lambda: |-
+          if(id(wake_riego).state) {
+            id(dsleep1).prevent_deep_sleep();
+          }
+  on_shutdown: 
+    priority: -100
+    then:
+      - switch.turn_off: "${upper_devicename}OP"
+      - switch.turn_off: "${upper_devicename}SLEEP"
+      - switch.turn_off: "${upper_devicename}CL"  
+      
+
+esp32:
+  board: $board
+  framework:
+    type: $framework
+
+################################################################################
+# Enable logging
+################################################################################
+logger:
+
+################################################################################
+# Enable Home Assistant API
+################################################################################
+api:
+  encryption:
+    key: !secret apikey
+
+################################################################################
+# OTA
+################################################################################
+ota:
+  - platform: esphome
+    password: !secret otapwd
+  
+################################################################################
+# Web Server
+################################################################################
+web_server:
+  port: 80
+  version: 3
+  include_internal: true
+  auth:
+    username: !secret web_server_user
+    password: !secret web_server_password
+  local: true
+  
+################################################################################
+# Network
+################################################################################
+wifi:
+  ssid: !secret SSID1
+  password: !secret PWD1
+  power_save_mode: none
+  fast_connect: True
+  manual_ip:
+    static_ip: $net_ip
+    gateway: $net_gateway
+    subnet: 255.255.255.0
+    dns1: 80.58.61.250
+    dns2: 80.58.61.254
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${upper_devicename} Fallback Hotspot"
+    password: !secret PWD1
+
+captive_portal:
+
+debug:
+#  update_interval: 30s
+
+################################################################################
+# Deep Sleep
+################################################################################
+deep_sleep:
+  run_duration: $wake_time
+  sleep_duration: $sleep_time
+  id: dsleep1
+  wakeup_pin:
+    number: $valveMAN
+    allow_other_uses: true
+    inverted: True
+    mode: 
+       input
+       
+################################################################################
+# I2C
+################################################################################
+i2c:
+  sda: $sda
+  scl: $scl
+  scan: true
+  id: bus_a
+
+################################################################################
+# Switches
+################################################################################
+switch:
+  - platform: restart
+    name: "Restart"
+    id: device_restart
+  - platform: gpio
+    pin: 
+      number: "${valveIN1}"
+      inverted: false
+    name: "${upper_devicename} Open"
+    id: "${upper_devicename}OP"
+    internal: False
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    pin: 
+      number: "${valveIN2}"
+      inverted: false
+    name: "${upper_devicename} Close"
+    id: "${upper_devicename}CL"
+    internal: False
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    pin: 
+      number: "${valveENA}"
+      inverted: False
+    name: "${upper_devicename} Sleep"
+    id: "${upper_devicename}SLEEP"
+    internal: False
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    pin:
+      number: GPIO18
+      inverted: False
+    name: "valvef"
+    id: valvef
+    on_turn_on: 
+      then:
+          - deep_sleep.prevent: dsleep1
+          - script.execute: valve_on
+    on_turn_off: 
+      then:
+          - script.execute: valve_off
+          - if:
+              condition:
+                - binary_sensor.is_off: wake_riego
+              then:
+                - deep_sleep.allow: dsleep1 
+
+################################################################################
+# Sensors
+################################################################################
+ads1115:
+  - address: 0x48
+
+sensor:
+  - platform: pulse_counter
+    pin:
+      number: $flux
+      mode:
+        input: true
+        pullup: true
+    unit_of_measurement: 'L/min'
+    accuracy_decimals: 2
+    id: caudal_riegof
+    name: "Caudal Instantaneo riego frotal"
+    update_interval: 30s
+    filters:
+      - lambda: return (x / 396); # 396 = 6,6 * 60
+  - platform: integration
+    name: "Consumo total de agua"
+    unit_of_measurement: 'L'
+    sensor: caudal_riegof
+    time_unit: min
+  - platform: integration
+    name: "M. cubicos de agua consumidos"
+    unit_of_measurement: 'mc'
+    sensor: caudal_riegof
+    time_unit: min
+    filters:
+      - lambda: return (x / 1000);
+  - platform: uptime
+    name: "${upper_devicename} uptime"
+  - platform: wifi_signal
+    name: "${upper_devicename} WIFI"
+    update_interval: 60s
+  - platform: ads1115
+    multiplexer: 'A0_A1'
+    gain: 2.048
+    name: "Tensión Bateria"
+    id: batvolt
+    filters:
+      - multiply: 2.016
+    update_interval: 15s
+    accuracy_decimals: 2
+    unit_of_measurement: "V"
+    on_value:
+      then:
+        - component.update: batpercent
+  - platform: template
+    name: "Battery %"
+    id: batpercent
+    lambda: return id(batvolt).state;
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    icon: mdi:battery-medium
+    filters:
+      - calibrate_linear:
+         method: exact
+         datapoints:
+          - 0.00 -> 0.0
+          - 3.30 -> 1.0
+          - 3.39 -> 10.0
+          - 3.75 -> 50.0
+          - 4.11 -> 90.0
+          - 4.20 -> 100.0
+      - lambda: |-
+          if (x <= 100) {
+            return x;
+          } else {
+            return 100;
+          }
+          if (x <0) {
+            return 0;
+          }
+  - platform: ads1115
+    multiplexer: 'A2_GND'
+    gain: 2.048
+    name: "Tensión Panel"
+    filters:
+      - multiply: 4.85
+    update_interval: 60s
+    accuracy_decimals: 2
+    unit_of_measurement: "V"
+  - platform: ads1115
+    multiplexer: 'A3_GND'
+    gain: 2.048
+    name: "Tensión alimentación"
+    filters:
+      - multiply: 4.30
+    update_interval: 60s
+    accuracy_decimals: 2
+    unit_of_measurement: "V"
+  - platform: template
+    name: "Wakeup Cause"
+    accuracy_decimals: 0
+    lambda: return esp_sleep_get_wakeup_cause();
+
+################################################################################
+# Binary Sensors
+################################################################################
+binary_sensor:
+# Pulsador riego manual
+  - platform: gpio
+    name: "Ciclo manual"
+    pin:
+      number: $valveMAN
+      allow_other_uses: true
+      inverted: True
+      mode:
+        input: True
+#        pulldown: True #pulldown con resistencia fisica
+    filters:
+      delayed_on_off: 400ms
+    on_press:
+      - if:
+          condition:
+            - switch.is_on: valvef
+          then:
+            - switch.turn_off: valvef
+          else:
+            - switch.turn_on: valvef
+            - delay: $water_time
+            - switch.turn_off: valvef
+  - platform: status
+    name: "Estado riego frontal"
+  - platform: homeassistant
+    name: "Despertar remoto"
+    id: "wake_riego"
+    internal: False
+    entity_id: input_boolean.despertar_riego
+    on_press:
+      then:
+        - logger.log: "Sleep desactivado desde HA"
+        - deep_sleep.prevent: dsleep1
+    on_release: 
+      then:
+        - logger.log: "Sleep activado desde HA"
+        - deep_sleep.allow: dsleep1
+
+################################################################################
+# Scripts
+################################################################################
+script:
+  - id: valve_on
+    then:
+      - switch.turn_off: "${upper_devicename}CL"
+      - switch.turn_on: "${upper_devicename}OP"
+      - switch.turn_on: "${upper_devicename}SLEEP"
+      - delay: 0.3 s
+      - switch.turn_off: "${upper_devicename}SLEEP"
+      - switch.turn_off: "${upper_devicename}OP"
+      - switch.turn_off: "${upper_devicename}CL"
+  - id: valve_off
+    then:
+      - switch.turn_off: "${upper_devicename}OP"
+      - switch.turn_on: "${upper_devicename}CL"
+      - switch.turn_on: "${upper_devicename}SLEEP"
+      - delay: 0.3 s
+      - switch.turn_off: "${upper_devicename}SLEEP"
+      - switch.turn_off: "${upper_devicename}OP"
+      - switch.turn_off: "${upper_devicename}CL"
