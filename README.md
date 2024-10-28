@@ -5,7 +5,7 @@ There are situations where standard irrigation valves (like zigbee Giex valves) 
 For these cases, you can use large valves (1") but there are 2 types of valves in the market:
   - 24v AC controled valves. Open when 24v/AC is aplied to coil
   - 9v pulse controled valves. Open by aplying a short pulse of 9v to the valve and closes by aplying reversed polarity pulse.
-For a battery operated controler for this valve, the pulse valve is the right cloice.
+For a battery operated controler for this valve, the pulse valve is the right choice.
 
 This controler uses:
   - ESP32_devkit_V4 as procesor (ESP32U vith connector for external antena)
